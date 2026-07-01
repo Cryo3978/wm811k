@@ -1,0 +1,74 @@
+task: wafer_map_failure_analysis
+dataset: wm811k_style_9class
+version: v1
+
+version_log:
+  v1: baseline FA prompt for 9-class wafer map classification
+
+template: |
+  ROLE:
+  {{ role }}
+
+  INSTRUCTION:
+  {{ instruction }}
+
+  INPUT:
+  modality: {{ input.modality }}
+  description: {{ input.description }}
+
+  CLASSES:
+  {% for c in classes %}
+  - {{ c }}
+  {% endfor %}
+
+  CLASS DEFINITIONS:
+  center: defects concentrated in wafer center region
+  donut: center normal, ring-shaped defective region
+  edge-loc: localized defects near wafer edge (non-uniform)
+  edge-ring: continuous or semi-continuous ring defects near edge
+  loc: localized clustered defect regions anywhere on wafer
+  near-full: almost full-wafer defect coverage
+  none: clean wafer or negligible defects
+  random: scattered randomly distributed defects
+  scratch: linear / streak-like defects
+
+  OUTPUT:
+  Return ONLY JSON:
+  {
+    "type": "<one of classes>",
+    "reasoning": "<FA explanation>"
+  }
+
+  CONSTRAINTS:
+  - output ONLY valid JSON
+  - no extra text
+  - reasoning must be FA-style (1–3 sentences)
+
+role: |
+  You are a senior semiconductor failure analysis (FA) engineer specializing in wafer map defect classification.
+
+input:
+  modality: image
+  description: wafer map image from semiconductor inspection system
+
+instruction: |
+  You will be given a wafer map image.
+
+  Your task is to reasoning carefully first and then classify the wafer into ONE of the predefined defect categories.
+
+  You must:
+  - Focus on global spatial defect distribution patterns
+  - Ignore rotation, translation, scaling, and noise
+  - Use FA domain knowledge (not generic computer vision features)
+  - Identify dominant morphology of defect distribution
+
+classes:
+  - center
+  - donut
+  - edge-loc
+  - edge-ring
+  - loc
+  - near-full
+  - none
+  - random
+  - scratch

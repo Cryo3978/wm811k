@@ -1,0 +1,9 @@
+# Normalize line endings to LF on commit, checkout as LF on all platforms
+* text=auto eol=lf
+
+# Binaries — no line-ending conversion
+*.pkl     binary
+*.parquet binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
