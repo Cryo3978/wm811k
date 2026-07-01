@@ -17,12 +17,28 @@ def to_2d(arr):
         return np.array(arr)
 
 
+MIN_SIZE = 30
+
+
+def pad_to_min_size(arr, min_size=MIN_SIZE):
+    h, w = arr.shape
+    pad_h = max(0, min_size - h)
+    pad_w = max(0, min_size - w)
+    if pad_h == 0 and pad_w == 0:
+        return arr
+    top, bottom = pad_h // 2, pad_h - pad_h // 2
+    left, right = pad_w // 2, pad_w - pad_w // 2
+    return np.pad(arr, ((top, bottom), (left, right)), mode="constant", constant_values=0)
+
+
 def save_img(arr, path: Path):
     arr = to_2d(arr).astype(np.float32)
     arr -= arr.min()
     if arr.max() != 0:
         arr /= arr.max()
-    Image.fromarray((arr * 255).astype(np.uint8)).save(path)
+    img_arr = (arr * 255).astype(np.uint8)
+    img_arr = pad_to_min_size(img_arr)
+    Image.fromarray(img_arr).save(path)
 
 
 def save_all_images(df: pd.DataFrame | None = None):

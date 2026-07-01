@@ -78,12 +78,28 @@ def _to_2d(arr):
         return np.array(arr)
 
 
+MIN_IMG_SIZE = 30
+
+
+def _pad_to_min_size(arr, min_size=MIN_IMG_SIZE):
+    h, w = arr.shape
+    pad_h = max(0, min_size - h)
+    pad_w = max(0, min_size - w)
+    if pad_h == 0 and pad_w == 0:
+        return arr
+    top, bottom = pad_h // 2, pad_h - pad_h // 2
+    left, right = pad_w // 2, pad_w - pad_w // 2
+    return np.pad(arr, ((top, bottom), (left, right)), mode="constant", constant_values=0)
+
+
 def _save_img(arr, path: Path):
     arr = _to_2d(arr).astype(np.float32)
     arr -= arr.min()
     if arr.max() != 0:
         arr /= arr.max()
-    Image.fromarray((arr * 255).astype(np.uint8)).save(path)
+    img_arr = (arr * 255).astype(np.uint8)
+    img_arr = _pad_to_min_size(img_arr)
+    Image.fromarray(img_arr).save(path)
 
 
 # ─── Step 1: pickle → parquet ────────────────────────────────────────────────
