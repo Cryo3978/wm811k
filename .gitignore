@@ -13,6 +13,13 @@ venv/
 # Data — not uploaded to GitHub
 data/
 
+# Evaluation logs
+logs/
+
 # Environment variables
 .env
 !.env.example
+
+.claude/
+
+logs/
