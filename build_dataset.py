@@ -11,7 +11,8 @@ Steps
 
 Usage
 -----
-    python build_dataset.py
+    python build_dataset.py                   # default: 200 per class
+    python build_dataset.py --n-per-class 50  # 50 per class
 """
 
 from pathlib import Path
@@ -152,6 +153,15 @@ def show_parquet(df: pd.DataFrame):
 # ─── main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    df = pickle_to_parquet()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build WM-811K dataset: pickle → parquet + images")
+    parser.add_argument(
+        "--n-per-class", type=int, default=NUM_PER_CLASS,
+        help=f"Max samples per defect class (default: {NUM_PER_CLASS})",
+    )
+    args = parser.parse_args()
+
+    df = pickle_to_parquet(num_per_class=args.n_per_class)
     parquet_to_images(df)
     show_parquet(df)
