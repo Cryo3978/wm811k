@@ -30,7 +30,26 @@ VALID_CLASSES = [
     "loc", "near-full", "none", "random", "scratch",
 ]
 
-client    = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+PROVIDERS = {
+    "openai": {
+        "api_key_env": "OPENAI_API_KEY",
+        "base_url":    None,
+    },
+    "siliconflow": {
+        "api_key_env": "SILICONFLOW_API_KEY",
+        "base_url":    "https://api.siliconflow.cn/v1",
+    },
+}
+
+PROVIDER  = os.getenv("PROVIDER", "openai").lower()
+_pcfg     = PROVIDERS.get(PROVIDER)
+if _pcfg is None:
+    raise ValueError(f"Unknown PROVIDER={PROVIDER!r}. Choose from: {list(PROVIDERS)}")
+
+client = OpenAI(
+    api_key=os.getenv(_pcfg["api_key_env"]),
+    **({"base_url": _pcfg["base_url"]} if _pcfg["base_url"] else {}),
+)
 EVA_MODEL = os.getenv("EVA_MODEL", "gpt-4o-mini")
 
 # ─── prompt ──────────────────────────────────────────────────────────────────
