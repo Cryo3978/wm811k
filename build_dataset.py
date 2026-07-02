@@ -126,8 +126,13 @@ def pickle_to_parquet(num_per_class: int = NUM_PER_CLASS) -> pd.DataFrame:
 
     PARQUET_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(PARQUET_PATH, engine="pyarrow", index=False)
-
     print(f"    Saved: {PARQUET_PATH}  shape={df.shape}")
+
+    sized_path = PARQUET_PATH.with_name(f"wm811k_sample_{len(df)}.parquet")
+    if sized_path != PARQUET_PATH:
+        df.to_parquet(sized_path, engine="pyarrow", index=False)
+        print(f"    Saved: {sized_path}  shape={df.shape}")
+
     print(df["failureType"].value_counts().to_string())
     return df
 
