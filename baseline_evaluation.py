@@ -10,6 +10,8 @@ import pandas as pd
 import yaml
 from jinja2 import Template
 from openai import OpenAI, APIStatusError, APIConnectionError
+import ollama
+import httpx
 from dotenv import load_dotenv
 from sklearn.metrics import (
     accuracy_score,
@@ -42,9 +44,9 @@ PROVIDERS = {
     },
     "ollama": {
         "api_key_env":   None,
-        "base_url":      os.getenv("OPENAI_BASE_URL", "http://localhost:11435/v1"),
+        # native Ollama server address (no /v1 suffix — the official ollama client adds /api/... itself)
+        "base_url":      os.getenv("OLLAMA_HOST", "http://localhost:11435"),
         "default_model": "qwen3.5:latest",
-        "extra_body":    {"enable_thinking": True},
     },
 }
 
@@ -53,14 +55,23 @@ _pcfg     = PROVIDERS.get(PROVIDER)
 if _pcfg is None:
     raise ValueError(f"Unknown PROVIDER={PROVIDER!r}. Choose from: {list(PROVIDERS)}")
 
-client = OpenAI(
-    api_key=os.getenv(_pcfg["api_key_env"], "") if _pcfg["api_key_env"] else "ollama",
-    timeout=float(os.getenv("EVA_TIMEOUT", "300")),
-    max_retries=0,  # we do our own retry loop below, with visible logging between attempts
-    **({"base_url": _pcfg["base_url"]} if _pcfg["base_url"] else {}),
-)
+EVA_TIMEOUT = float(os.getenv("EVA_TIMEOUT", "300"))
 EVA_MODEL   = os.getenv("EVA_MODEL", _pcfg.get("default_model", "gpt-4o-mini"))
 MAX_RETRIES = int(os.getenv("EVA_MAX_RETRIES", "3"))
+
+# ollama: talk straight to its native /api/chat via the official client (avoids the
+# OpenAI-compat shim, which doesn't reliably support Ollama's "think" toggle).
+# openai / siliconflow: OpenAI-compatible chat completions API.
+ollama_client = ollama.Client(host=_pcfg["base_url"], timeout=EVA_TIMEOUT) if PROVIDER == "ollama" else None
+client = (
+    OpenAI(
+        api_key=os.getenv(_pcfg["api_key_env"], ""),
+        timeout=EVA_TIMEOUT,
+        max_retries=0,  # we do our own retry loop below, with visible logging between attempts
+        **({"base_url": _pcfg["base_url"]} if _pcfg["base_url"] else {}),
+    )
+    if PROVIDER != "ollama" else None
+)
 
 # ─── prompt ──────────────────────────────────────────────────────────────────
 
@@ -94,33 +105,47 @@ def parse_prediction(raw: str) -> tuple[str, str]:
         return "unknown", raw
 
 
+def _query_ollama(img_path: Path) -> str:
+    response = ollama_client.chat(
+        model=EVA_MODEL,
+        messages=[{"role": "user", "content": prompt, "images": [encode_image(img_path)]}],
+        think=True,
+        options={"num_predict": 2048},
+    )
+    return response.message.content
+
+
+def _query_openai(img_path: Path) -> str:
+    response = client.chat.completions.create(
+        model=EVA_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{encode_image(img_path)}"},
+                    },
+                ],
+            }
+        ],
+        max_tokens=2048,
+    )
+    return response.choices[0].message.content
+
+
+_RETRYABLE_ERRORS = (APIStatusError, APIConnectionError, ollama.ResponseError, httpx.HTTPError)
+
+
 def query_model(img_path: Path) -> str:
-    kwargs = {}
-    if _pcfg.get("extra_body"):
-        kwargs["extra_body"] = _pcfg["extra_body"]
+    call = _query_ollama if PROVIDER == "ollama" else _query_openai
 
     last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = client.chat.completions.create(
-                model=EVA_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{encode_image(img_path)}"},
-                            },
-                        ],
-                    }
-                ],
-                max_tokens=2048,
-                **kwargs,
-            )
-            return response.choices[0].message.content
-        except (APIStatusError, APIConnectionError) as e:
+            return call(img_path)
+        except _RETRYABLE_ERRORS as e:
             last_err = e
             if attempt < MAX_RETRIES:
                 wait = 2 ** attempt  # 2s, 4s, 8s, ...
