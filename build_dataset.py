@@ -104,7 +104,7 @@ def _save_img(arr, path: Path):
 
 # ─── Step 1: pickle → parquet ────────────────────────────────────────────────
 
-def pickle_to_parquet() -> pd.DataFrame:
+def pickle_to_parquet(num_per_class: int = NUM_PER_CLASS) -> pd.DataFrame:
     print(f"[1/3] Reading pickle: {PICKLE_PATH}")
     df = pd.read_pickle(PICKLE_PATH)
 
@@ -115,7 +115,7 @@ def pickle_to_parquet() -> pd.DataFrame:
     df = df[df["failureType"].notna() & df["failureType"].isin(VALID_CLASSES)]
 
     samples = [
-        sub.sample(n=min(len(sub), NUM_PER_CLASS), random_state=42)
+        sub.sample(n=min(len(sub), num_per_class), random_state=42)
         for c in VALID_CLASSES
         if len(sub := df[df["failureType"] == c]) > 0
     ]
