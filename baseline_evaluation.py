@@ -32,12 +32,18 @@ VALID_CLASSES = [
 
 PROVIDERS = {
     "openai": {
-        "api_key_env": "OPENAI_API_KEY",
-        "base_url":    None,
+        "api_key_env":   "OPENAI_API_KEY",
+        "base_url":      None,
     },
     "siliconflow": {
-        "api_key_env": "SILICONFLOW_API_KEY",
-        "base_url":    "https://api.siliconflow.cn/v1",
+        "api_key_env":   "SILICONFLOW_API_KEY",
+        "base_url":      "https://api.siliconflow.cn/v1",
+    },
+    "ollama": {
+        "api_key_env":   None,
+        "base_url":      os.getenv("OPENAI_BASE_URL", "http://localhost:11435/v1"),
+        "default_model": "qwen3.5:latest",
+        "extra_body":    {"enable_thinking": True},
     },
 }
 
@@ -47,10 +53,10 @@ if _pcfg is None:
     raise ValueError(f"Unknown PROVIDER={PROVIDER!r}. Choose from: {list(PROVIDERS)}")
 
 client = OpenAI(
-    api_key=os.getenv(_pcfg["api_key_env"]),
+    api_key=os.getenv(_pcfg["api_key_env"], "") if _pcfg["api_key_env"] else "",
     **({"base_url": _pcfg["base_url"]} if _pcfg["base_url"] else {}),
 )
-EVA_MODEL = os.getenv("EVA_MODEL", "gpt-4o-mini")
+EVA_MODEL = os.getenv("EVA_MODEL", _pcfg.get("default_model", "gpt-4o-mini"))
 
 # ─── prompt ──────────────────────────────────────────────────────────────────
 
@@ -85,6 +91,10 @@ def parse_prediction(raw: str) -> tuple[str, str]:
 
 
 def query_model(img_path: Path) -> str:
+    kwargs = {}
+    if _pcfg.get("extra_body"):
+        kwargs["extra_body"] = _pcfg["extra_body"]
+
     response = client.chat.completions.create(
         model=EVA_MODEL,
         messages=[
@@ -100,6 +110,7 @@ def query_model(img_path: Path) -> str:
             }
         ],
         max_tokens=2048,
+        **kwargs,
     )
     return response.choices[0].message.content
 
