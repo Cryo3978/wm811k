@@ -3,12 +3,13 @@ import os
 import base64
 import json
 import re
+import time
 from datetime import datetime
 
 import pandas as pd
 import yaml
 from jinja2 import Template
-from openai import OpenAI
+from openai import OpenAI, APIStatusError, APIConnectionError
 from dotenv import load_dotenv
 from sklearn.metrics import (
     accuracy_score,
@@ -54,9 +55,12 @@ if _pcfg is None:
 
 client = OpenAI(
     api_key=os.getenv(_pcfg["api_key_env"], "") if _pcfg["api_key_env"] else "ollama",
+    timeout=float(os.getenv("EVA_TIMEOUT", "300")),
+    max_retries=0,  # we do our own retry loop below, with visible logging between attempts
     **({"base_url": _pcfg["base_url"]} if _pcfg["base_url"] else {}),
 )
-EVA_MODEL = os.getenv("EVA_MODEL", _pcfg.get("default_model", "gpt-4o-mini"))
+EVA_MODEL   = os.getenv("EVA_MODEL", _pcfg.get("default_model", "gpt-4o-mini"))
+MAX_RETRIES = int(os.getenv("EVA_MAX_RETRIES", "3"))
 
 # ─── prompt ──────────────────────────────────────────────────────────────────
 
@@ -95,24 +99,35 @@ def query_model(img_path: Path) -> str:
     if _pcfg.get("extra_body"):
         kwargs["extra_body"] = _pcfg["extra_body"]
 
-    response = client.chat.completions.create(
-        model=EVA_MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
+    last_err = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            response = client.chat.completions.create(
+                model=EVA_MODEL,
+                messages=[
                     {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{encode_image(img_path)}"},
-                    },
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{encode_image(img_path)}"},
+                            },
+                        ],
+                    }
                 ],
-            }
-        ],
-        max_tokens=2048,
-        **kwargs,
-    )
-    return response.choices[0].message.content
+                max_tokens=2048,
+                **kwargs,
+            )
+            return response.choices[0].message.content
+        except (APIStatusError, APIConnectionError) as e:
+            last_err = e
+            if attempt < MAX_RETRIES:
+                wait = 2 ** attempt  # 2s, 4s, 8s, ...
+                print(f"          [retry {attempt}/{MAX_RETRIES - 1}] {type(e).__name__}: {e} — retrying in {wait}s")
+                time.sleep(wait)
+
+    raise last_err
 
 
 # ─── evaluation loop ─────────────────────────────────────────────────────────
@@ -164,7 +179,19 @@ def run_evaluation(n_samples: int | None = None, n_per_class: int | None = None)
             continue
 
         img_size_kb = img_path.stat().st_size / 1024
-        raw               = query_model(img_path)
+        try:
+            raw = query_model(img_path)
+        except Exception as e:
+            print(f"[{i:>4}/{len(df)}] ✗  QUERY FAILED after retries: {type(e).__name__}: {e}")
+            y_true.append(label)
+            y_pred.append("unknown")
+            records.append({
+                "i": i, "lot": lot_name, "wafer_idx": wafer_idx_str,
+                "true": label, "pred": "unknown", "correct": False,
+                "reasoning": "", "raw": f"QUERY FAILED: {type(e).__name__}: {e}",
+            })
+            continue
+
         pred, reasoning   = parse_prediction(raw)
         correct           = pred == label
         status            = "✓" if correct else "✗"
