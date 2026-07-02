@@ -53,7 +53,7 @@ if _pcfg is None:
     raise ValueError(f"Unknown PROVIDER={PROVIDER!r}. Choose from: {list(PROVIDERS)}")
 
 client = OpenAI(
-    api_key=os.getenv(_pcfg["api_key_env"], "") if _pcfg["api_key_env"] else "",
+    api_key=os.getenv(_pcfg["api_key_env"], "") if _pcfg["api_key_env"] else "ollama",
     **({"base_url": _pcfg["base_url"]} if _pcfg["base_url"] else {}),
 )
 EVA_MODEL = os.getenv("EVA_MODEL", _pcfg.get("default_model", "gpt-4o-mini"))
